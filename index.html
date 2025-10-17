@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel de Predicción de Riesgos</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'primary': '#3b82f6', // blue-500
+                        'secondary': '#10b981', // emerald-500
+                        'risk-high': '#ef4444', // red-500
+                        'risk-medium': '#f97316', // orange-500
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
+        .tab-link {
+            padding: 0.75rem 1.5rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            border-bottom: 3px solid transparent;
+            font-weight: 500;
+        }
+        .tab-link.active {
+            border-color: #3b82f6; /* primary color */
+            color: #3b82f6;
+        }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        /* Estilos para riesgo alto en la tabla */
+        .risk-alto {
+            background-color: #fee2e2; /* red-100 */
+            font-weight: 600;
+        }
+        .task-completed {
+            text-decoration: line-through;
+            opacity: 0.7;
+            background-color: #d1fae5; /* green-100 */
+        }
+        .kpi-card {
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+            transition: transform 0.3s ease;
+        }
+        .kpi-card:hover {
+            transform: translateY(-2px);
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.0/dist/chart.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
+</head>
+<body class="p-4 md:p-8">
+
+    <div class="max-w-7xl mx-auto">
+        <header class="mb-8">
+            <h1 class="text-3xl font-bold text-gray-800 border-b-2 border-primary pb-2">
+                Panel de Mantenimiento Predictivo
+            </h1>
+        </header>
+
+        <div class="flex flex-col md:flex-row gap-4 mb-8 p-4 bg-white rounded-xl shadow-lg">
+            <div class="flex-grow">
+                <label for="csvFileInput" class="block text-sm font-medium text-gray-700 mb-1">
+                    1. Cargar Archivo de Predicción (CSV):
+                </label>
+                <input type="file" id="csvFileInput" accept=".csv" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20">
+            </div>
+            
+            <div class="w-full md:w-64">
+                <label for="date-filter" class="block text-sm font-medium text-gray-700 mb-1">
+                    2. Seleccionar Fecha:
+                </label>
+                <select id="date-filter" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm rounded-md shadow-sm bg-white disabled:opacity-50">
+                    <option>Cargue datos primero</option>
+                </select>
+            </div>
+        </div>
+
+        <nav class="flex border-b border-gray-300 mb-6 bg-white rounded-t-xl shadow-md">
+            <div class="tab-link active" data-tab="daily-plan">
+                Plan Diario de Trabajo
+            </div>
+            <div class="tab-link" data-tab="historical-analysis">
+                Análisis Histórico
+            </div>
+        </nav>
+
+        <main>
+            <div id="daily-plan" class="tab-content active space-y-8">
+                
+                <div class="flex justify-between items-center bg-white p-6 rounded-xl shadow-lg border-l-4 border-risk-high kpi-card">
+                    <div>
+                        <p class="text-sm font-medium text-gray-500 uppercase">Unidad con Máximo Riesgo</p>
+                        <p id="highest-risk-unit" class="text-2xl font-bold text-gray-900 mt-1">
+                            --
+                        </p>
+                        <p id="highest-risk-value" class="text-lg text-risk-high font-semibold">
+                            --
+                        </p>
+                    </div>
+                    <button id="export-pdf-btn" class="flex items-center bg-primary text-white px-4 py-2 rounded-lg font-semibold shadow-md hover:bg-primary/90 transition duration-150">
+                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                        Exportar Plan a PDF
+                    </button>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    
+                    <div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-lg">
+                        <h2 class="text-xl font-semibold text-gray-800 mb-4">Probabilidad de Riesgo por Unidad Vecinal</h2>
+                        <div class="h-96">
+                            <canvas id="risk-bar-chart"></canvas>
+                        </div>
+                    </div>
+                    
+                    <div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-lg overflow-x-auto">
+                        <h2 class="text-xl font-semibold text-gray-800 mb-4">Tareas de Mantenimiento</h2>
+                        <table id="task-table" class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unidad</th>
+                                    <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Prob. Riesgo</th>
+                                    <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Lluvia (mm)</th>
+                                    <th class="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Realizado</th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-gray-200">
+                                </tbody>
+                        </table>
+                        <p id="no-daily-data" class="text-gray-500 mt-4 text-sm text-center">Cargue datos para ver el plan diario.</p>
+                    </div>
+
+                </div>
+
+            </div>
+
+            <div id="historical-analysis" class="tab-content space-y-8">
+                
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    
+                    <div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-lg">
+                        <h2 class="text-xl font-semibold text-gray-800 mb-4">Correlación: Lluvia vs. Probabilidad de Riesgo</h2>
+                        <div class="h-96">
+                            <canvas id="correlation-chart"></canvas>
+                        </div>
+                    </div>
+                    
+                    <div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-lg overflow-x-auto">
+                        <h2 class="text-xl font-semibold text-gray-800 mb-4">Puntos Calientes Históricos (Riesgos Altos)</h2>
+                        <table id="hotspots-table" class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">#</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unidad Vecinal</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Veces en ALTO</th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-gray-200">
+                                </tbody>
+                        </table>
+                        <p id="no-historical-data" class="text-gray-500 mt-4 text-sm text-center">Cargue datos para ver el análisis histórico.</p>
+                    </div>
+                    
+                </div>
+            </div>
+
+        </main>
+
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- ELEMENTOS DEL DOM ---
+            const csvFileInput = document.getElementById('csvFileInput');
+            const dateFilter = document.getElementById('date-filter');
+            const tabs = document.querySelectorAll('.tab-link');
+            const tabContents = document.querySelectorAll('.tab-content');
+            const exportPdfBtn = document.getElementById('export-pdf-btn');
+
+            // --- ESTADO DE LA APLICACIÓN ---
+            let allData = [];
+            let riskBarChart, correlationChart;
+
+            dateFilter.disabled = true;
+            exportPdfBtn.disabled = true;
+
+            // --- INICIALIZACIÓN DE EVENTOS ---
+            csvFileInput.addEventListener('change', handleFileSelect);
+
+            tabs.forEach(tab => {
+                tab.addEventListener('click', () => {
+                    tabs.forEach(item => item.classList.remove('active'));
+                    tab.classList.add('active');
+                    const target = document.getElementById(tab.dataset.tab);
+                    tabContents.forEach(content => content.classList.remove('active'));
+                    target.classList.add('active');
+                });
+            });
+
+            dateFilter.addEventListener('change', () => {
+                if (allData.length > 0 && dateFilter.value) {
+                    updateDailyView(dateFilter.value);
+                    exportPdfBtn.disabled = false;
+                }
+            });
+            
+            exportPdfBtn.addEventListener('click', exportPlanToPDF);
+
+            // --- LÓGICA DE MANEJO DE DATOS ---
+            function handleFileSelect(event) {
+                const file = event.target.files[0];
+                if (file) {
+                    Papa.parse(file, {
+                        header: true,
+                        skipEmptyLines: true,
+                        delimiter: ";",
+                        complete: processData,
+                        error: (err) => console.error("Error al parsear el CSV:", err)
+                    });
+                }
+            }
+
+            function processData(results) {
+                allData = results.data.map(row => {
+                    if (!row.Fecha || !row.Unidad_Vecinal || !row.Riesgo_Predicho || row.Lluvia_Predicha_mm === undefined || row.Probabilidad_Riesgo_Alto === undefined) {
+                        return null;
+                    }
+                    const lluvia = parseFloat(String(row.Lluvia_Predicha_mm).replace(',', '.'));
+                    const probRiesgo = parseFloat(String(row.Probabilidad_Riesgo_Alto).replace(',', '.'));
+                    const dateParts = row.Fecha.split('-');
+                    if (dateParts.length !== 3) {
+                         return null;
+                    }
+                    const jsDate = new Date(`${dateParts[2]}-${dateParts[1]}-${dateParts[0]}T00:00:00`);
+                    if (isNaN(lluvia) || isNaN(probRiesgo) || isNaN(jsDate.getTime())) {
+                        return null;
+                    }
+                    return { ...row, Fecha: jsDate, Lluvia_Predicha_mm: lluvia, Probabilidad_Riesgo_Alto: probRiesgo };
+                }).filter(row => row !== null);
+
+                if (allData.length > 0) {
+                    populateDashboard();
+                } else {
+                    alert("No se pudieron procesar datos válidos. Revise el formato del CSV.");
+                    dateFilter.disabled = true;
+                    exportPdfBtn.disabled = true;
+                    dateFilter.innerHTML = '<option>Cargue datos primero</option>';
+                    if (riskBarChart) riskBarChart.destroy();
+                    if (correlationChart) correlationChart.destroy();
+                    document.getElementById('task-table').querySelector('tbody').innerHTML = '';
+                    document.getElementById('hotspots-table').querySelector('tbody').innerHTML = '';
+                }
+            }
+
+            function populateDashboard() {
+                allData.sort((a, b) => a.Fecha - b.Fecha);
+                const uniqueDates = [...new Set(allData.map(d => d.Fecha.toISOString().split('T')[0]))].sort();
+                dateFilter.innerHTML = '';
+                uniqueDates.forEach(dateStr => {
+                    const option = document.createElement('option');
+                    option.value = dateStr;
+                    const date = new Date(dateStr); 
+                    option.textContent = date.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                    dateFilter.appendChild(option);
+                });
+                dateFilter.disabled = false;
+                if (uniqueDates.length > 0) {
+                    updateDailyView(uniqueDates[0]);
+                    updateHistoricalView();
+                    exportPdfBtn.disabled = false;
+                }
+            }
+            
+            // --- LÓGICA DE ACTUALIZACIÓN DE VISTAS ---
+            function updateDailyView(selectedDateStr) {
+                const dataForDate = allData.filter(d => d.Fecha.toISOString().split('T')[0] === selectedDateStr);
+                dataForDate.sort((a, b) => b.Probabilidad_Riesgo_Alto - a.Probabilidad_Riesgo_Alto);
+
+                if (dataForDate.length > 0) {
+                    const highestRisk = dataForDate[0];
+                    document.getElementById('highest-risk-unit').textContent = highestRisk.Unidad_Vecinal || 'N/A';
+                    document.getElementById('highest-risk-value').textContent = `Prob: ${(highestRisk.Probabilidad_Riesgo_Alto * 100).toFixed(1)}%`;
+                } else {
+                    document.getElementById('highest-risk-unit').textContent = 'Sin Datos';
+                    document.getElementById('highest-risk-value').textContent = '--';
+                }
+
+                const taskTableBody = document.getElementById('task-table').querySelector('tbody');
+                taskTableBody.innerHTML = '';
+                document.getElementById('no-daily-data').classList.toggle('hidden', dataForDate.length > 0);
+
+                dataForDate.forEach(row => {
+                    const tr = document.createElement('tr');
+                    tr.classList.add('hover:bg-gray-100', 'transition', 'duration-100');
+                    if (row.Riesgo_Predicho === 'ALTO') {
+                        tr.classList.add('risk-alto');
+                    }
+                    tr.innerHTML = `
+                        <td class="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-900">${row.Unidad_Vecinal}</td>
+                        <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-500">${(row.Probabilidad_Riesgo_Alto * 100).toFixed(1)}%</td>
+                        <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-500">${row.Lluvia_Predicha_mm.toFixed(2)}</td>
+                        <td class="px-3 py-2 whitespace-nowrap text-center text-sm font-medium">
+                            <input type="checkbox" class="task-checkbox h-4 w-4 text-primary rounded border-gray-300 focus:ring-primary">
+                        </td>
+                    `;
+                    taskTableBody.appendChild(tr);
+                });
+                
+                taskTableBody.querySelectorAll('.task-checkbox').forEach(box => {
+                    box.addEventListener('change', (e) => {
+                        e.target.closest('tr').classList.toggle('task-completed', e.target.checked);
+                    });
+                });
+
+                if (riskBarChart) riskBarChart.destroy();
+                const ctx = document.getElementById('risk-bar-chart').getContext('2d');
+                const chartData = dataForDate.slice(0, 10);
+
+                riskBarChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: chartData.map(d => d.Unidad_Vecinal),
+                        datasets: [{
+                            label: 'Probabilidad de Riesgo Alto',
+                            data: chartData.map(d => d.Probabilidad_Riesgo_Alto),
+                            backgroundColor: chartData.map((d, i) => i === 0 ? 'hsl(348, 83%, 47%)' : 'hsl(204, 86%, 53%)')
+                        }]
+                    },
+                    options: { 
+                        responsive: true, maintainAspectRatio: false, indexAxis: 'y', 
+                        scales: { 
+                            x: { beginAtZero: true, max: 1, title: { display: true, text: 'Probabilidad (0.0 - 1.0)' } },
+                            y: { title: { display: false } }
+                        },
+                        plugins: { legend: { display: false } }
+                    }
+                });
+            }
+            
+            function updateHistoricalView() {
+                // --- Tabla de "Puntos Calientes" (Hotspots) ---
+                const hotspots = allData.reduce((acc, row) => {
+                    if (row.Riesgo_Predicho && row.Riesgo_Predicho.toUpperCase() === 'ALTO') {
+                        acc[row.Unidad_Vecinal] = (acc[row.Unidad_Vecinal] || 0) + 1;
+                    }
+                    return acc;
+                }, {});
+                const sortedHotspots = Object.entries(hotspots).sort(([, a], [, b]) => b - a);
+                const hotspotsTableBody = document.getElementById('hotspots-table').querySelector('tbody');
+                hotspotsTableBody.innerHTML = '';
+                document.getElementById('no-historical-data').classList.toggle('hidden', sortedHotspots.length > 0);
+
+                const maxCount = sortedHotspots.length > 0 ? sortedHotspots[0][1] : 1;
+
+                sortedHotspots.forEach(([unit, count], index) => {
+                    const tr = document.createElement('tr');
+                    tr.classList.add('transition', 'duration-100');
+                    
+                    const intensity = count / maxCount;
+                    const adjustedIntensity = Math.pow(intensity, 2); 
+                    const lightness = 95 - (adjustedIntensity * 40);
+
+                    tr.style.backgroundColor = `hsl(0, 90%, ${lightness}%)`;
+                    tr.style.color = lightness > 75 ? '#374151' : 'white';
+
+                    tr.innerHTML = `
+                        <td class="px-4 py-2 whitespace-nowrap text-sm font-semibold">${index + 1}</td>
+                        <td class="px-4 py-2 whitespace-nowrap text-sm font-bold">${unit}</td>
+                        <td class="px-4 py-2 whitespace-nowrap text-sm font-extrabold">${count}</td>
+                    `;
+                    hotspotsTableBody.appendChild(tr);
+                });
+
+                // --- Gráfico de Correlación con colores por riesgo ---
+                if (correlationChart) correlationChart.destroy();
+                const ctx = document.getElementById('correlation-chart').getContext('2d');
+
+                const pointColors = allData.map(d => {
+                    const riskLevel = d.Riesgo_Predicho.toUpperCase();
+                    if (riskLevel === 'ALTO') return '#ef4444';
+                    if (riskLevel === 'MEDIO') return '#f97316';
+                    return '#3b82f6';
+                });
+                
+                correlationChart = new Chart(ctx, {
+                    type: 'scatter',
+                    data: {
+                        datasets: [{
+                            label: 'Predicción',
+                            data: allData.map(d => ({ x: d.Lluvia_Predicha_mm, y: d.Probabilidad_Riesgo_Alto })),
+                            backgroundColor: pointColors, 
+                            pointRadius: 5,
+                            pointHoverRadius: 7
+                        }]
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            x: { title: { display: true, text: 'Lluvia Predicha (mm)', font: { size: 14, weight: 'bold' } }, beginAtZero: true },
+                            y: { title: { display: true, text: 'Probabilidad de Riesgo Alto', font: { size: 14, weight: 'bold' } }, beginAtZero: true, max: 1 }
+                        }
+                    }
+                });
+            }
+            
+            function exportPlanToPDF() {
+                if (!dateFilter.value || allData.length === 0) {
+                    alert("No hay datos para exportar. Por favor, cargue un archivo y seleccione una fecha.");
+                    return;
+                }
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF();
+                const selectedDate = new Date(dateFilter.value).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                
+                doc.setFontSize(18);
+                doc.text(`Plan de Trabajo - ${selectedDate}`, 14, 16);
+                doc.setFontSize(12);
+                doc.text(`Unidad de Máximo Riesgo: ${document.getElementById('highest-risk-unit').textContent}`, 14, 24);
+
+                const tableHeaders = ['Unidad', 'Prob. Riesgo', 'Lluvia (mm)'];
+                const tableBody = [];
+                const tableRows = document.querySelectorAll('#task-table tbody tr');
+
+                tableRows.forEach(row => {
+                    const cells = row.querySelectorAll('td');
+                    let unitCellText = cells[0].textContent;
+                    const probCellText = cells[1].textContent;
+                    const rainCellText = cells[2].textContent;
+                    if (row.classList.contains('task-completed')) {
+                        unitCellText = "✅ " + unitCellText;
+                    }
+                    tableBody.push([unitCellText, probCellText, rainCellText]);
+                });
+                
+                doc.autoTable({
+                    head: [tableHeaders],
+                    body: tableBody,
+                    startY: 30,
+                    headStyles: { 
+                        fillColor: [44, 62, 80],
+                        textColor: [255, 255, 255]
+                    },
+                    didParseCell: function(data) {
+                        const originalTr = tableRows[data.row.index];
+                        if (originalTr && originalTr.classList.contains('risk-alto')) {
+                            data.cell.styles.fillColor = [254, 226, 226];
+                            data.cell.styles.textColor = [159, 28, 28];
+                            data.cell.styles.fontStyle = 'bold';
+                        }
+                    }
+                });
+                
+                doc.save(`Plan_Mantenimiento_${selectedDate.replace(/\//g, '-')}.pdf`);
+            }
+
+            function loadInitialData() {
+                const initialFile = 'plan_mantenimiento_futuro_enriquecido.csv';
+                fetch(initialFile)
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error(`Error de red - No se pudo encontrar el archivo: ${initialFile}`);
+                        }
+                        return response.text();
+                    })
+                    .then(csvText => {
+                        Papa.parse(csvText, {
+                            header: true,
+                            skipEmptyLines: true,
+                            delimiter: ";",
+                            complete: processData,
+                            error: (err) => console.error("Error al parsear el CSV inicial:", err)
+                        });
+                    })
+                    .catch(error => {
+                        console.warn(`No se cargó el archivo CSV inicial (${initialFile}). Esperando carga manual.`, error);
+                    });
+            }
+            
+            loadInitialData();
+        });
+    </script>
+</body>
+</html>
