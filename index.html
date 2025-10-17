@@ -422,6 +422,9 @@
                 const doc = new jsPDF();
                 const selectedDate = new Date(dateFilter.value).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
                 
+                // --- CAMBIO CLAVE: Establecer una fuente estándar ---
+                doc.setFont('helvetica');
+
                 doc.setFontSize(18);
                 doc.text(`Plan de Trabajo - ${selectedDate}`, 14, 16);
                 doc.setFontSize(12);
@@ -433,9 +436,9 @@
 
                 tableRows.forEach(row => {
                     const cells = row.querySelectorAll('td');
-                    let unitCellText = cells[0].textContent;
-                    const probCellText = cells[1].textContent;
-                    const rainCellText = cells[2].textContent;
+                    let unitCellText = cells[0].textContent.trim();
+                    const probCellText = cells[1].textContent.trim();
+                    const rainCellText = cells[2].textContent.trim();
                     if (row.classList.contains('task-completed')) {
                         unitCellText = "✅ " + unitCellText;
                     }
@@ -446,9 +449,15 @@
                     head: [tableHeaders],
                     body: tableBody,
                     startY: 30,
+                    // --- CAMBIO CLAVE: Usar la fuente estándar en la tabla ---
+                    styles: {
+                        font: 'helvetica',
+                        fontSize: 10
+                    },
                     headStyles: { 
                         fillColor: [44, 62, 80],
-                        textColor: [255, 255, 255]
+                        textColor: [255, 255, 255],
+                        fontStyle: 'bold'
                     },
                     didParseCell: function(data) {
                         const originalTr = tableRows[data.row.index];
